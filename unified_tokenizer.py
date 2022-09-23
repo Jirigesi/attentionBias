@@ -26,8 +26,7 @@ from typing import Sequence
 from typing import Text
 from typing import Tuple
 
-import logging
-# from absl import logging
+from absl import logging
 import dataclasses
 import regex  # Using instead of `re` because it handles Unicode classes.
 import six
