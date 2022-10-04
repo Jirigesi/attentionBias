@@ -2,6 +2,6 @@
 
 
 <p align="center">
-  <img src="https://github.com/Jirigesi/OOSLA-Prediction/blob/main/framework.png" width="750" title="hover text">
+  <img src="https://github.com/Jirigesi/attentionBias/blob/main/transformer_multi-headed_self-attention-recap.png" width="750" title="hover text">
 </p>
 
