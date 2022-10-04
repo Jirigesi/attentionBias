@@ -18,7 +18,7 @@
 
 The goal of attribution analysis is attributing the predition of a deep learning network to its input features. Formally, suppose we have a fuction $F$ : $R^n -> [0, 1]$ that represents a deep learning network, and an input $x = (x_1, ... , x_n) \in R^n$. An attribution of the prediction at input $x$ relative to a baseline input $x'$ is a vector $A_f(x,x') = (a_1, ... , a_n) \in R^n$ where $a_i$ is the contribution of $x_i$ to the prediction $F(x)$.
 
-### Primarily attribution methods
+### Primarily Attribution Techniques
 
 | **Method names**     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                               |   |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
