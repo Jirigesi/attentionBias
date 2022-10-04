@@ -15,7 +15,7 @@ class VariableMisuseClassifier(nn.Module):
         # define the dense layer
         self.Linear = nn.Linear(self.bert.config.hidden_size, 1)
         # define the sigmoid activation function
-        self.sigmoid = nn.Sigmoid() 
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, batch_input_ids, batch_attention_mask):
         # pass the batched toekns to the bert mode
