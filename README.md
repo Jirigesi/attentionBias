@@ -12,6 +12,8 @@ A transformer is a deep learning model that adopts the mechanism of self-attenti
 
 ### Visualization of the BERT attention
 
+Below shows the basic attention maps for transformer based models. 
+
 <p align="center">
   <img src="https://github.com/Jirigesi/attentionBias/blob/main/imgs/Visualization-of-the-vanilla-BERT-attention-left-and-syntax-guided-self-attention.png" width="450" title="hover text">
 </p>
