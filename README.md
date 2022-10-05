@@ -2,7 +2,8 @@
 
 ## Basics
 
-### Transformer multi-head self-attention 
+### Transformer multi-head self-attention
+A transformer is a deep learning model that adopts the mechanism of self-attention, differentially weighting the significance of each part of the input data. It is used primarily in the fields of natural language processing (NLP) and other fields. 
 
 <p align="center">
   <img src="https://github.com/Jirigesi/attentionBias/blob/main/imgs/transformer_multi-headed_self-attention-recap.png" width="650" title="hover text">
