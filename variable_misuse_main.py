@@ -83,7 +83,6 @@ def train(model, tokenizer, train_dataloader, dev_dataloader, loss_fn, optimizer
         
         writer.flush()
         writer.close()
-        
 
 
 def evaluate(model, tokenizer, data_loader, loss_fn, device):
@@ -106,7 +105,6 @@ def evaluate(model, tokenizer, data_loader, loss_fn, device):
     losses = []
     # no gradient calculation needed
     with torch.no_grad():
-        
         for _, batch in enumerate(tqdm(data_loader, desc="Evaluation")):
             code_batch, n_label_batch = batch
             
@@ -125,15 +123,23 @@ def evaluate(model, tokenizer, data_loader, loss_fn, device):
             
             predicted_labels.extend(output.to('cpu').numpy().tolist())
             # correct_labels.extend(n_label_batch.to('cpu').numpy().tolist())
-            loss = loss_fn(output, n_label_batch.unsqueeze(1).to(device))
+            # covert output tensor from double to float
+            output = output.type(torch.FloatTensor)
+            print("data type of output: ", output.dtype)
+            print("Output datashape: ", output.shape)
+            n_label_batch = n_label_batch.type(torch.float32)
+            print("data type of n_label_batch: ", n_label_batch.dtype)
+            print("n_label_batch datashape: ", n_label_batch.unsqueeze(1).shape)
             
-            losses.append(loss.to('cpu').numpy().tolist())
+            loss = loss_fn(output, n_label_batch.unsqueeze(1))
+            
+            losses.append(loss.numpy().tolist())
             
     return np.mean(losses), predicted_labels
             
 if __name__ == "__main__":
     
-    mode = "train"
+    mode = "test"
     
     if mode == "train":
         # define the device
@@ -191,16 +197,18 @@ if __name__ == "__main__":
         tokenizer = RobertaTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
         model = VariableMisuseClassifier(PRE_TRAINED_MODEL_NAME, 'roberta')
         model = model.to(device)
-        
-    
-        json_file = '/home/fjiriges/attention_bias/attentionBias/data/variable_misuse/20200621_Python_variable_misuse_datasets_train.json'
+        # read the test data
+        json_file = './data/variable_misuse/20200621_Python_variable_misuse_datasets_train.json'
         df = pd.read_json(json_file, lines=True)
-
-        iterable_dataset = VariableMisuseDataset(df)
-
+        # build the dataset
+        iterable_dataset = VariableMisuseDataset(df[:20])
+        # build the dataloader
         dataloader = DataLoader(iterable_dataset, batch_size=512, shuffle=False)
-        
+        # initialize the loss function
         loss_fn = nn.BCELoss().to(device)
-        
+        # evaluate the model
         eval_loss, predicted_labels = evaluate(model, tokenizer, dataloader, loss_fn, device)
+        
+        print(eval_loss)
+        print(predicted_labels)
     
