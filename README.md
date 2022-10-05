@@ -1,4 +1,5 @@
 # Attention Bias Analysis in Transformer based models 
+In the past few years, transformer-based models were mainly used for code-related tasks and achieved state-of-the-art performance on most tasks. Researchers have been trying to explain transformer-based models using self-attention maps. However, it has been shown that ordinary changes in self-attention maps cannot provide useful information. Attribution analysis is a study that shows promising results in attributing the predictions of a transformer-based model to its inputs. Therefore, in this study, we empirically evaluate whether attribution analysis can better analyze the model. If yes, can we explain any bias from the attribution analysis?
 
 ## Basics
 
