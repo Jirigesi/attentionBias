@@ -48,7 +48,7 @@ def train(model, tokenizer, train_dataloader, dev_dataloader, loss_fn, optimizer
             output = model(embeddings['input_ids'].to(device), embeddings['attention_mask'].to(device))
             # calculate loss
             predicted_labels.extend(output.to('cpu').numpy().tolist())
-            loss = loss_fn(output, n_label_batch.unsqueeze(1).to(device))
+            loss = loss_fn(output, n_label_batch.unsqueeze(1))
             
             if GRADIENT_ACCUMULATION_STEPS > 1:
                 loss = loss / GRADIENT_ACCUMULATION_STEPS
@@ -180,7 +180,6 @@ if __name__ == "__main__":
         
         
         OUTPUT_DIR = "/tmp/"
-        # MODEL_FILE_NAME = "pytorch_model.bin"
         PATIENCE = 2
         
         loss_fn = nn.BCELoss().to(device)
