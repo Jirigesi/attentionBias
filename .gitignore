@@ -134,3 +134,6 @@ dmypy.json
 
 # models 
 *.ckpt*
+*.bin
+*.gold
+*.output
