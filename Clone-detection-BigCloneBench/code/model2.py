@@ -41,6 +41,7 @@ class Model(nn.Module):
         input_ids=input_ids.view(-1,block_size)
         a = self.encoder(input_ids=input_ids, attention_mask=input_ids.ne(1))
         outputs = a[0]
+        # print(outputs.size())
         logits=self.classifier(outputs)
         prob=self.softmax(logits)
         if labels is not None:
