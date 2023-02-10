@@ -42,7 +42,7 @@ except:
 
 from tqdm import tqdm, trange
 import multiprocessing
-from model import Model
+from model3 import Model
 
 cpu_cont = 16
 from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
