@@ -40,7 +40,8 @@ except:
     from tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 import multiprocessing
-from model3 import Model
+from model4 import Model
+import javalang
 cpu_cont = 16
 from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
                           BertConfig, BertForMaskedLM, BertTokenizer,
@@ -86,34 +87,64 @@ class InputFeatures(object):
                  input_tokens,
                  input_ids,
                  label,
+                 syntax_types,
                  url1,
-                 url2
-
-    ):
+                 url2):
         self.input_tokens = input_tokens
         self.input_ids = input_ids
         self.label=label
+        self.syntax_types=syntax_types
         self.url1=url1
         self.url2=url2
         
-def convert_examples_to_features(code1_tokens,code2_tokens,label,url1,url2,tokenizer,args,cache):
-    #source
-    code1_tokens=code1_tokens[:args.block_size-2]
+def get_syntax_types_for_code(code_snippet):
+  types = ["[CLS]"]
+  code = ["<s>"]
+  tree = list(javalang.tokenizer.tokenize(code_snippet))
+  
+  for i in tree:
+    j = str(i)
+    j = j.split(" ")
+    if j[1] == '"MASK"':
+      types.append('[MASK]')
+      code.append('<mask>')
+    else:
+      types.append(j[0].lower())
+      code.append(j[1][1:-1])
+    
+  types.append("[SEP]")
+  code.append("</s>")
+  return np.array(types), ' '.join(code)
+        
+def convert_examples_to_features(code1_tokens,
+                                 code2_tokens,
+                                 label,
+                                 url1,
+                                 url2,
+                                 tokenizer,
+                                 block_size,
+                                 cache):
+    
+    syntax_types_1, code1_tokens = get_syntax_types_for_code(code1_tokens)
+    syntax_types_2, code2_tokens = get_syntax_types_for_code(code2_tokens)
+
+    code1_tokens=code1_tokens[:block_size-2]
     code1_tokens =[tokenizer.cls_token]+code1_tokens+[tokenizer.sep_token]
-    code2_tokens=code2_tokens[:args.block_size-2]
+    code2_tokens=code2_tokens[:block_size-2]
     code2_tokens =[tokenizer.cls_token]+code2_tokens+[tokenizer.sep_token]  
     
     code1_ids=tokenizer.convert_tokens_to_ids(code1_tokens)
-    padding_length = args.block_size - len(code1_ids)
+    padding_length = block_size - len(code1_ids)
     code1_ids+=[tokenizer.pad_token_id]*padding_length
     
     code2_ids=tokenizer.convert_tokens_to_ids(code2_tokens)
-    padding_length = args.block_size - len(code2_ids)
+    padding_length = block_size - len(code2_ids)
     code2_ids+=[tokenizer.pad_token_id]*padding_length
     
     source_tokens=code1_tokens+code2_tokens
     source_ids=code1_ids+code2_ids
-    return InputFeatures(source_tokens,source_ids,label,url1,url2)
+    
+    return InputFeatures(source_tokens,source_ids,label, syntax_types_1, url1,url2)
 
 class TextDataset(Dataset):
     def __init__(self, tokenizer, args, file_path='train', block_size=512,pool=None):
@@ -127,7 +158,6 @@ class TextDataset(Dataset):
                 line=line.strip()
                 js=json.loads(line)
                 url_to_code[js['idx']]=js['func']
-
         data=[]
         cache={}
         f=open(index_filename)
@@ -142,11 +172,6 @@ class TextDataset(Dataset):
                 else:
                     label=1
                 data.append((url1,url2,label,tokenizer, args,cache,url_to_code))
-        # get first 25% of the data for training 
-        if 'train' in postfix:
-            data = data[:int(len(data)*0.25)]
-            print('Number of examples for traing: ',len(data))
-            
         if 'test' not in postfix:
             data=random.sample(data,int(len(data)*0.1))
 
@@ -242,9 +267,7 @@ def train(args, train_dataset, model, tokenizer,pool):
     
     global_step = args.start_step
     tr_loss, logging_loss,avg_loss,tr_nb,tr_num,train_loss = 0.0, 0.0,0.0,0,0,0
-    # best_mrr=0.0
     best_f1=0
-    # model.resize_token_embeddings(len(tokenizer))
     model.zero_grad()
     set_seed(args.seed)  # Added here for reproducibility (even between python 2 and 3)
     loss_log = []
@@ -254,10 +277,11 @@ def train(args, train_dataset, model, tokenizer,pool):
         tr_num=0
         train_loss=0
         for step, batch in enumerate(bar):
-            inputs = batch[0].to(args.device)        
+            inputs = batch[0].to(args.device) 
             labels=batch[1].to(args.device) 
+            syntax_tokens=batch[2].to(args.device)
             model.train()
-            loss,logits = model(inputs,labels)
+            loss,logits = model(inputs,labels, syntax_tokens, syntax_type='identifier')
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training

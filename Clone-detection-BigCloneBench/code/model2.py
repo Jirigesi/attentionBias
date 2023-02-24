@@ -36,14 +36,14 @@ class Model(nn.Module):
         self.classifier=RobertaClassificationHead(config)
         self.softmax=nn.Softmax(dim=1)
     
-        
-    def forward(self, block_size, input_ids=None,labels=None, ): 
+    def forward(self, block_size, input_ids=None,labels=None): 
         input_ids=input_ids.view(-1,block_size)
-        a = self.encoder(input_ids=input_ids, attention_mask=input_ids.ne(1))
+        a = self.encoder(input_ids=input_ids, 
+                         attention_mask=input_ids.ne(1))
         outputs = a[0]
-        # print(outputs.size())
         logits=self.classifier(outputs)
         prob=self.softmax(logits)
+        
         if labels is not None:
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits, labels)

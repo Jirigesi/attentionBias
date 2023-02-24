@@ -198,33 +198,25 @@ def getSyntaxAttentionScore(model, data, tokenizer, syntaxList, model_type='fine
                         interim_value = _attention[layer][0][head][:, start_index:end_index+1].mean().cpu().detach().numpy()
                         if np.isnan(interim_value):
                             pass
-                        else: 
-                            attention_weights[layer][head].append(interim_value)     
+                        else:
+                            attention_weights[layer][head].append(interim_value)
             if np.array(attention_weights).shape[2] != 0:
                 Instantce_Result[syntaxType+model_type].append(np.array(attention_weights))
-                            
         all_instances.append(Instantce_Result)
-        
     return all_instances
 
 if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     config = RobertaConfig.from_pretrained('microsoft/codebert-base')
-
     tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
-
     model = RobertaModel.from_pretrained('microsoft/codebert-base',
                                         output_attentions=True, 
                                         output_hidden_states=True)
 
     model=Model(model,config,tokenizer)
-
     checkpoint_prefix = "saved_models/checkpoint-best-f1/model.bin"
-
     model.load_state_dict(torch.load(checkpoint_prefix))
-
     model = model.to(device)
     
     file_path = "../dataset/valid.txt"
@@ -255,8 +247,7 @@ if __name__ == "__main__":
                 label=1
             data.append((url1,url2,label,' '.join(url_to_code[url1].split()), ' '.join(url_to_code[url2].split())))
             added_lines += 1
-            
-            
+
     syntax_list = ['annotation', 'basictype', 'boolean', 
                     'decimalinteger', 'identifier', 'keyword',
                     'modifier', 'operator', 'separator', 'null',
@@ -265,22 +256,16 @@ if __name__ == "__main__":
     syntax_attention_weights = getSyntaxAttentionScore(model, data, tokenizer, syntax_list, model_type='finetuned')
     
     # pikle the syntax_attention_weights
-    
     with open('syntax_attention_weights_finetuned.pkl', 'wb') as f:
         pickle.dump(syntax_attention_weights, f)
-        
     model = RobertaModel.from_pretrained('microsoft/codebert-base',
                                         output_attentions=True, 
                                         output_hidden_states=True)
-
     model=Model(model,config,tokenizer)
-    
     model = model.to(device)
-    
     syntax_attention_weights = getSyntaxAttentionScore(model, data, tokenizer, syntax_list, model_type='pretrained')
     
     # pikle the syntax_attention_weights
-    
     with open('syntax_attention_weights_pretrained.pkl', 'wb') as f:
         pickle.dump(syntax_attention_weights, f)
     

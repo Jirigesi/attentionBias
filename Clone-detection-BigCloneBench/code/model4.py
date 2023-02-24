@@ -38,20 +38,23 @@ class Model(nn.Module):
         self.args=args
         self.softmax=nn.Softmax(dim=1)
     
-    def forward(self, input_ids=None,labels=None): 
+    def forward(self, input_ids=None,labels=None, syntax_tokens=None, syntax_type=None): 
         input_ids=input_ids.view(-1,self.args.block_size)
         a = self.encoder(input_ids=input_ids, 
                          attention_mask=input_ids.ne(1))
         outputs = a[0]
+        attention = a[-1]
         logits=self.classifier(outputs)
         prob=self.softmax(logits)
         if labels is not None:
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits, labels)
             ag_loss = self.compute_ag_loss(input_ids, 
-                                           a[-1], 
+                                           attention, 
+                                           syntax_tokens,
+                                           syntax_type,
                                            self.args.device, 
-                                           attn_head_types='0,1,1,4')
+                                           attn_head_types='0,1,1,1')
             loss = loss + ag_loss
             return loss,prob
         else:
@@ -76,7 +79,27 @@ class Model(nn.Module):
 
         return [one_to_one, next_token, prev_token, cls_token]  
     
-    def compute_ag_loss(self, inputs, attentions, device, attn_head_types='0,1,1,4'):
+    def create_syx_pos_attn_patterns(self, attentions, syntax_tokens, syntax_type):
+        '''
+        Creates attention patterns related to positional encoding for attention initialization
+        one_to_one - pays attention to the corresponding token
+        next_token - pays attention to the next token
+        prev_token - pays attention to the previous token
+        cls_token  - pays attention to the first index ([CLS])
+        '''
+        one_to_one = torch.eye(attentions[0].shape[-1])
+        syntax_token = torch.zeros(attentions[0].shape[-1], attentions[0].shape[-1])
+        
+        # types_1, rewrote_code_1 = get_syntax_types_for_code(code_sample[3])
+        # types_2, rewrote_code_2 = get_syntax_types_for_code(code_sample[4])
+        
+        for i in range(len(syntax_tokens)):
+            if syntax_tokens[i] == syntax_type:
+                syntax_token[:,i] = 1.
+        
+        return [one_to_one, syntax_token] 
+    
+    def compute_ag_loss(self, inputs, attentions, syntax_tokens, syntax_type, device, attn_head_types='0,1,1,4'):
         '''
         Adds a random loss based on attention values
         To test gradients
@@ -90,7 +113,7 @@ class Model(nn.Module):
         numbers = attn_head_types
         cum_sum = np.cumsum(numbers)
         # Matrices containing the attention patterns
-        targets = self.create_pos_attn_patterns(attentions)
+        targets = self.create_syx_pos_attn_patterns(attentions, syntax_tokens, syntax_type)
         # Loss for positional attention patterns
         expanded_targets = []
         loss = torch.nn.MSELoss()
