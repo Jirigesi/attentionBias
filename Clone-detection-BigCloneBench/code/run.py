@@ -116,7 +116,7 @@ def convert_examples_to_features(code1_tokens,code2_tokens,label,url1,url2,token
     return InputFeatures(source_tokens,source_ids,label,url1,url2)
 
 class TextDataset(Dataset):
-    def __init__(self, tokenizer, args, file_path='train', block_size=512,pool=None):
+    def __init__(self, tokenizer, args, file_path='train', block_size=512, pool=None):
         postfix=file_path.split('/')[-1].split('.txt')[0]
         self.examples = []
         index_filename=file_path

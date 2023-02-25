@@ -69,7 +69,9 @@ def get_example(item):
             code=' '.join(url_to_code[url1].split())
         except:
             code=""
-        code1=tokenizer.tokenize(code)
+        # code1=tokenizer.tokenize(code)
+        code1 = code
+        
     if url2 in cache:
         code2=cache[url2].copy()
     else:
@@ -77,7 +79,8 @@ def get_example(item):
             code=' '.join(url_to_code[url2].split())
         except:
             code=""
-        code2=tokenizer.tokenize(code)
+        # code2=tokenizer.tokenize(code)
+        code2 = code
         
     return convert_examples_to_features(code1,code2,label,url1,url2,tokenizer,args,cache)
 
@@ -114,7 +117,16 @@ def get_syntax_types_for_code(code_snippet):
     
   types.append("[SEP]")
   code.append("</s>")
+#   return ' '.join(types), ' '.join(code)
   return np.array(types), ' '.join(code)
+
+def convert_syntax_types_to_ids(syntax_types, syntax_id_map):
+    ids = []
+    for i in syntax_types:
+        ids.append(syntax_id_map[i])
+        
+    return np.array(ids)
+    
         
 def convert_examples_to_features(code1_tokens,
                                  code2_tokens,
@@ -122,32 +134,37 @@ def convert_examples_to_features(code1_tokens,
                                  url1,
                                  url2,
                                  tokenizer,
-                                 block_size,
-                                 cache):
+                                 args,
+                                 cache,
+                                 syntax_id_map):
     
     syntax_types_1, code1_tokens = get_syntax_types_for_code(code1_tokens)
     syntax_types_2, code2_tokens = get_syntax_types_for_code(code2_tokens)
-
-    code1_tokens=code1_tokens[:block_size-2]
+    code1_tokens = tokenizer.tokenize(code1_tokens)
+    code2_tokens = tokenizer.tokenize(code2_tokens)
+    
+    code1_tokens=code1_tokens[:args.block_size-2]
     code1_tokens =[tokenizer.cls_token]+code1_tokens+[tokenizer.sep_token]
-    code2_tokens=code2_tokens[:block_size-2]
+    code2_tokens=code2_tokens[:args.block_size-2]
     code2_tokens =[tokenizer.cls_token]+code2_tokens+[tokenizer.sep_token]  
     
     code1_ids=tokenizer.convert_tokens_to_ids(code1_tokens)
-    padding_length = block_size - len(code1_ids)
+    padding_length = args.block_size - len(code1_ids)
     code1_ids+=[tokenizer.pad_token_id]*padding_length
     
     code2_ids=tokenizer.convert_tokens_to_ids(code2_tokens)
-    padding_length = block_size - len(code2_ids)
+    padding_length = args.block_size - len(code2_ids)
     code2_ids+=[tokenizer.pad_token_id]*padding_length
     
     source_tokens=code1_tokens+code2_tokens
     source_ids=code1_ids+code2_ids
     
-    return InputFeatures(source_tokens,source_ids,label, syntax_types_1, url1,url2)
+    syntax_types_1_ids = convert_syntax_types_to_ids(syntax_types_1, syntax_id_map)
+    
+    return InputFeatures(source_tokens,source_ids,label, syntax_types_1_ids, url1, url2)
 
 class TextDataset(Dataset):
-    def __init__(self, tokenizer, args, file_path='train', block_size=512,pool=None):
+    def __init__(self, tokenizer, args, file_path='train', block_size=512, pool=None):
         postfix=file_path.split('/')[-1].split('.txt')[0]
         self.examples = []
         index_filename=file_path
@@ -174,8 +191,9 @@ class TextDataset(Dataset):
                 data.append((url1,url2,label,tokenizer, args,cache,url_to_code))
         if 'test' not in postfix:
             data=random.sample(data,int(len(data)*0.1))
-
+        # this is a important line of code 
         self.examples=pool.map(get_example,tqdm(data,total=len(data)))
+        
         if 'train' in postfix:
             for idx, example in enumerate(self.examples[:3]):
                     logger.info("*** Example ***")
@@ -183,13 +201,15 @@ class TextDataset(Dataset):
                     logger.info("label: {}".format(example.label))
                     logger.info("input_tokens: {}".format([x.replace('\u0120','_') for x in example.input_tokens]))
                     logger.info("input_ids: {}".format(' '.join(map(str, example.input_ids))))
+                    
+        
 
     def __len__(self):
         return len(self.examples)
 
     def __getitem__(self, item):
         
-        return torch.tensor(self.examples[item].input_ids),torch.tensor(self.examples[item].label)
+        return torch.tensor(self.examples[item].input_ids), torch.tensor(self.examples[item].label), self.examples[item].syntax_types
 
 def load_and_cache_examples(args, tokenizer, evaluate=False,test=False,pool=None):
     dataset = TextDataset(tokenizer, 
@@ -277,6 +297,8 @@ def train(args, train_dataset, model, tokenizer,pool):
         tr_num=0
         train_loss=0
         for step, batch in enumerate(bar):
+            print('The batch size is:')
+            print(len(batch))
             inputs = batch[0].to(args.device) 
             labels=batch[1].to(args.device) 
             syntax_tokens=batch[2].to(args.device)
