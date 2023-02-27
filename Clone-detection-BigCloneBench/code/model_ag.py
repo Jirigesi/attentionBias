@@ -92,20 +92,20 @@ class Model(nn.Module):
         print(attentions[0].shape)
         print("syntax_atten_matrix shape:")
         print(syntax_atten_matrix.shape)
-
+        # one_to_one - pays attention to the corresponding token
         one_to_one = torch.eye(self.args.block_size)
-        targets = [one_to_one, syntax_atten_matrix]
+        # next_token - pays attention to the next token
+        # next_token = torch.cat((torch.cat((torch.zeros(attentions[0].shape[-1]-1, 1), torch.eye(attentions[0].shape[-1]-1)), dim=1),\
+        #                         torch.zeros(1, attentions[0].shape[-1])), dim=0)
+        # prev_token - pays attention to the previous token
+        
+        # prev_token = torch.cat((torch.zeros(1, attentions[0].shape[-1]), \
+        #     torch.cat((torch.eye(attentions[0].shape[-1]-1), torch.zeros(attentions[0].shape[-1]-1, 1)), dim=1)), dim=0)
+        # cls_token  - pays attention to the first index ([CLS])
+        # cls_token = torch.zeros(attentions[0].shape[-1], attentions[0].shape[-1])
+        # cls_token[:,0] = 1.
 
-        # pickle the targets
-        # import pickle
-        # with open('targets.pickle', 'wb') as f:
-        #     pickle.dump(targets, f)
-        # # pickle the attentions
-        # with open('attentions.pickle', 'wb') as f:
-        #     pickle.dump(attentions, f)
-        # # pickle the syntax_atten_matrix
-        # with open('syntax_atten_matrix.pickle', 'wb') as f:
-        #     pickle.dump(syntax_atten_matrix, f)
+        targets = [one_to_one, syntax_atten_matrix]
 
         # Loss for positional attention patterns
         expanded_targets = []
@@ -134,43 +134,3 @@ class Model(nn.Module):
                     else:
                         total_loss += loss(expanded_targets[j], attentions[i][:,cum_sum[j-1]:cum_sum[j]])
         return total_loss
-
-    # def create_syx_pos_attn_patterns(self, 
-    #                                 attentions, 
-    #                                 syntax_ids, 
-    #                                 attend_syntax_id):
-    #     '''
-    #     Creates attention patterns related to positional encoding for attention initialization
-    #     one_to_one - pays attention to the corresponding token
-    #     next_token - pays attention to the next token
-    #     prev_token - pays attention to the previous token
-    #     cls_token  - pays attention to the first index ([CLS])
-    #     '''
-    #     one_to_one = torch.eye(attentions[0].shape[-1])
-    #     syntax_token = torch.zeros(attentions[0].shape[-1], attentions[0].shape[-1])
-    #     print(syntax_ids)
-    #     print(attend_syntax_id)
-    #     for i in range(len(syntax_ids)):
-    #         if syntax_ids[i] == attend_syntax_id:
-    #             syntax_token[:,i] = 1.
-        
-    #     return [one_to_one, syntax_token] 
-        
-    # def create_pos_attn_patterns(self, attentions):
-    #     '''
-    #     Creates attention patterns related to positional encoding for attention initialization
-    #     one_to_one - pays attention to the corresponding token
-    #     next_token - pays attention to the next token
-    #     prev_token - pays attention to the previous token
-    #     cls_token  - pays attention to the first index ([CLS])
-    #     '''
-
-    #     one_to_one = torch.eye(attentions[0].shape[-1])
-    #     next_token = torch.cat((torch.cat((torch.zeros(attentions[0].shape[-1]-1, 1), torch.eye(attentions[0].shape[-1]-1)), dim=1),\
-    #         torch.zeros(1, attentions[0].shape[-1])), dim=0)
-    #     prev_token = torch.cat((torch.zeros(1, attentions[0].shape[-1]), \
-    #         torch.cat((torch.eye(attentions[0].shape[-1]-1), torch.zeros(attentions[0].shape[-1]-1, 1)), dim=1)), dim=0)
-    #     cls_token = torch.zeros(attentions[0].shape[-1], attentions[0].shape[-1])
-    #     cls_token[:,0] = 1.
-
-    #     return [one_to_one, next_token, prev_token, cls_token]  
