@@ -40,8 +40,12 @@ except:
     from tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 import multiprocessing
-from model4 import Model
+from model_ag import Model
+from sklearn.metrics import recall_score
+from sklearn.metrics import precision_score 
+from sklearn.metrics import f1_score
 import javalang
+from syntaxType import SYNTAXTYPE
 cpu_cont = 16
 from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
                           BertConfig, BertForMaskedLM, BertTokenizer,
@@ -82,7 +86,7 @@ def get_example(item):
         # code2=tokenizer.tokenize(code)
         code2 = code
         
-    return convert_examples_to_features(code1,code2,label,url1,url2,tokenizer,args,cache)
+    return convert_examples_to_features(code1,code2,label,url1,url2,tokenizer,args,cache, attend_syntax='separator')
 
 class InputFeatures(object):
     """A single training/test features for a example."""
@@ -90,43 +94,61 @@ class InputFeatures(object):
                  input_tokens,
                  input_ids,
                  label,
-                 syntax_types,
+                 syntax_atten_matrix,
                  url1,
                  url2):
         self.input_tokens = input_tokens
         self.input_ids = input_ids
         self.label=label
-        self.syntax_types=syntax_types
+        self.syntax_atten_matrix=syntax_atten_matrix
         self.url1=url1
         self.url2=url2
         
 def get_syntax_types_for_code(code_snippet):
-  types = ["[CLS]"]
-  code = ["<s>"]
-  tree = list(javalang.tokenizer.tokenize(code_snippet))
-  
-  for i in tree:
-    j = str(i)
-    j = j.split(" ")
-    if j[1] == '"MASK"':
-      types.append('[MASK]')
-      code.append('<mask>')
+    types = ["[CLS]"]
+    code = ["<s>"]
+    tree = list(javalang.tokenizer.tokenize(code_snippet))
+    for i in tree:
+        j = str(i)
+        j = j.split(" ")
+        if j[1] == '"MASK"':
+            types.append('[MASK]')
+            code.append('<mask>')
     else:
-      types.append(j[0].lower())
-      code.append(j[1][1:-1])
-    
-  types.append("[SEP]")
-  code.append("</s>")
-#   return ' '.join(types), ' '.join(code)
-  return np.array(types), ' '.join(code)
+        types.append(j[0].lower())
+        code.append(j[1][1:-1])
 
-def convert_syntax_types_to_ids(syntax_types, syntax_id_map):
-    ids = []
-    for i in syntax_types:
-        ids.append(syntax_id_map[i])
+    types.append("[SEP]")
+    code.append("</s>")
+    return np.array(types), ' '.join(code)
+
+def convert_syntax_to_ids(syntax):
+    type_ids = []
+    for i in syntax:
+        if i in SYNTAXTYPE.__members__:
+            type_ids.append(SYNTAXTYPE[i].value)
+        else: 
+            type_ids.append(SYNTAXTYPE['unknown'].value)
+    return type_ids
+
+def create_syx_pos_attn_patterns(maxLength, 
+                                 syntax_ids, 
+                                 attend_syntax_id):
+        '''
+        Creates attention patterns related to positional encoding for attention initialization
+        one_to_one - pays attention to the corresponding token
+        next_token - pays attention to the next token
+        prev_token - pays attention to the previous token
+        cls_token  - pays attention to the first index ([CLS])
+        '''
+        # one_to_one = torch.eye(maxLength)
+        syntax_matrix = torch.zeros(maxLength, maxLength)
         
-    return np.array(ids)
-    
+        for i in range(len(syntax_ids)):
+            if syntax_ids[i] == attend_syntax_id:
+                syntax_matrix[:,i] = 1.
+        
+        return syntax_matrix
         
 def convert_examples_to_features(code1_tokens,
                                  code2_tokens,
@@ -136,7 +158,7 @@ def convert_examples_to_features(code1_tokens,
                                  tokenizer,
                                  args,
                                  cache,
-                                 syntax_id_map):
+                                 attend_syntax='seperator'):
     
     syntax_types_1, code1_tokens = get_syntax_types_for_code(code1_tokens)
     syntax_types_2, code2_tokens = get_syntax_types_for_code(code2_tokens)
@@ -159,9 +181,13 @@ def convert_examples_to_features(code1_tokens,
     source_tokens=code1_tokens+code2_tokens
     source_ids=code1_ids+code2_ids
     
-    syntax_types_1_ids = convert_syntax_types_to_ids(syntax_types_1, syntax_id_map)
+    syntax_types_1_ids = convert_syntax_to_ids(syntax_types_1)
+    syntax_atten_matrix = create_syx_pos_attn_patterns(args.block_size, 
+                                                       syntax_types_1_ids, 
+                                                       SYNTAXTYPE[attend_syntax].value)
     
-    return InputFeatures(source_tokens,source_ids,label, syntax_types_1_ids, url1, url2)
+    
+    return InputFeatures(source_tokens,source_ids,label, syntax_atten_matrix, url1, url2)
 
 class TextDataset(Dataset):
     def __init__(self, tokenizer, args, file_path='train', block_size=512, pool=None):
@@ -201,15 +227,13 @@ class TextDataset(Dataset):
                     logger.info("label: {}".format(example.label))
                     logger.info("input_tokens: {}".format([x.replace('\u0120','_') for x in example.input_tokens]))
                     logger.info("input_ids: {}".format(' '.join(map(str, example.input_ids))))
-                    
-        
 
     def __len__(self):
         return len(self.examples)
 
     def __getitem__(self, item):
         
-        return torch.tensor(self.examples[item].input_ids), torch.tensor(self.examples[item].label), self.examples[item].syntax_types
+        return torch.tensor(self.examples[item].input_ids), torch.tensor(self.examples[item].label), self.examples[item].syntax_atten_matrix
 
 def load_and_cache_examples(args, tokenizer, evaluate=False,test=False,pool=None):
     dataset = TextDataset(tokenizer, 
@@ -297,13 +321,14 @@ def train(args, train_dataset, model, tokenizer,pool):
         tr_num=0
         train_loss=0
         for step, batch in enumerate(bar):
-            print('The batch size is:')
-            print(len(batch))
             inputs = batch[0].to(args.device) 
             labels=batch[1].to(args.device) 
-            syntax_tokens=batch[2].to(args.device)
+            syntax_atten_matrix=batch[2].to(args.device)
             model.train()
-            loss,logits = model(inputs,labels, syntax_tokens, syntax_type='identifier')
+            attend_syntax_type = 'separator'
+            loss,logits = model(inputs,
+                                labels, 
+                                syntax_atten_matrix)
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -406,22 +431,17 @@ def evaluate(args, model, tokenizer, prefix="",pool=None,eval_when_training=Fals
     for i in range(1,100):
         threshold=i/100
         y_preds=logits[:,1]>threshold
-        from sklearn.metrics import recall_score
         recall=recall_score(y_trues, y_preds)
-        from sklearn.metrics import precision_score
-        precision=precision_score(y_trues, y_preds)   
-        from sklearn.metrics import f1_score
+        precision=precision_score(y_trues, y_preds)  
+        
         f1=f1_score(y_trues, y_preds) 
         if f1>best_f1:
             best_f1=f1
             best_threshold=threshold
 
     y_preds=logits[:,1]>best_threshold
-    from sklearn.metrics import recall_score
     recall=recall_score(y_trues, y_preds)
-    from sklearn.metrics import precision_score
     precision=precision_score(y_trues, y_preds)   
-    from sklearn.metrics import f1_score
     f1=f1_score(y_trues, y_preds)             
     result = {
         "eval_recall": float(recall),
@@ -594,8 +614,10 @@ def main():
         torch.distributed.init_process_group(backend='nccl')
         args.n_gpu = 1
     args.device = device
-    args.per_gpu_train_batch_size=args.train_batch_size//args.n_gpu
-    args.per_gpu_eval_batch_size=args.eval_batch_size//args.n_gpu
+    # args.per_gpu_train_batch_size=args.train_batch_size//args.n_gpu
+    args.per_gpu_train_batch_size = args.train_batch_size
+    # args.per_gpu_eval_batch_size=args.eval_batch_size//args.n_gpu
+    args.per_gpu_eval_batch_size = args.eval_batch_size
     # Setup logging
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt='%m/%d/%Y %H:%M:%S',

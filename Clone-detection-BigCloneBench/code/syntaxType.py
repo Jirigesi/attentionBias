@@ -15,3 +15,4 @@ class SYNTAXTYPE(Enum):
     operator = 120
     separator = 130
     string = 140 
+    unknown = 0
