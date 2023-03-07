@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 from model2 import Model
-from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
 import random
 import multiprocessing
 from tqdm import tqdm, trange
@@ -120,7 +119,7 @@ def convert_examples_to_features(code1_tokens,code2_tokens,label,url1,url2,token
     source_ids=code1_ids+code2_ids
     return InputFeatures(source_tokens,source_ids,label,url1,url2)
 
-def traverse(node, code, depth=0):
+def traverse(code, node,depth=0):
     declaration = {}
     stack = []
     stack.append(node)
@@ -188,26 +187,6 @@ def get_extended_types(token_list, types):
     code.append("</s>")
     return extended_types, ' '.join(code)
 
-def convert_types(types):
-    # check the index of first second value is the "{"
-    if types[0][1] == '"class"':
-        return ['[CLS]'] + types + ['[SEP]']
-    index_ = 0
-    # if not class declaration, find the first "{" and add method_declaration before it
-    for i in range(len(types)):
-        if types[i][1] == '"{"':
-            index_ = i
-            break
-    final_types = [] 
-    final_types.append('[CLS]')
-    for i in range(len(types)):
-        if i < index_:
-            final_types.append("method_declaration")
-        else:
-            final_types.append(types[i][0])
-    final_types.append('[SEP]')
-
-    return final_types
 
 def get_ast_types(code):
     code = code.replace("{", " {")
@@ -215,31 +194,45 @@ def get_ast_types(code):
     code_list = code.split(' ')
     tree = parser.parse(bytes(code, "utf8"))
     root_node = tree.root_node
-    declaration = traverse(root_node, code)
+    declaration = traverse(code, root_node)
     types = label_tokens(code_list, declaration)
 
     ast_types, rewrote_code = get_extended_types(code_list, types)
-    ast_types = convert_types(ast_types)
+    # check the index of first second value is the "{"
+    if ast_types[0][1] == '"class"':
+        return ['[CLS]'] + [i[0] for i in ast_types] + ['[SEP]'], rewrote_code
+    index_ = 0
+    # if not class declaration, find the first "{" and add method_declaration before it
+    for i in range(len(ast_types)):
+        if ast_types[i][1] == '"{"':
+            index_ = i
+            break
+    final_types = [] 
+    final_types.append('[CLS]')
+    for i in range(len(ast_types)):
+        if i < index_:
+            final_types.append("method_declaration")
+        else:
+            final_types.append(ast_types[i][0])
+    final_types.append('[SEP]')
+    return np.array(final_types), rewrote_code
 
-    return ast_types, rewrote_code
-
-def get_start_end_of_token_when_tokenized(code, types, tokenizer):
+def get_start_end_of_token_when_tokenized(code_list, types, tokenizer):
   reindexed_types = []
   start = 0
   end = 0
-  for index, each_token in enumerate(code.split(" ")):
-    tokenized_list = tokenizer.tokenize(each_token)
-    for i in range(len(tokenized_list)):
-      end += 1
-    reindexed_types.append((start, end-1))
-    start = end
+  for each_token in code_list: 
+      tokenized_list = tokenizer.tokenize(each_token)
+      end += len(tokenized_list)
+      reindexed_types.append((start, end-1))
+      start = end
   return reindexed_types
 
 def getSyntaxAttentionScore(model, data, tokenizer, syntaxList, model_type='finetuned'):
     block_size = 400
     all_instances = []
     number = 0
-    data = data[:200]
+    data = data[:2000]
     for code_sample in tqdm(data):
         Instantce_Result = {}
         for syntaxType in syntaxList:
@@ -271,7 +264,7 @@ def getSyntaxAttentionScore(model, data, tokenizer, syntaxList, model_type='fine
             output = model(block_size,source_ids,labels)
 
         _attention = output[2].attentions
-        start_end = get_start_end_of_token_when_tokenized(rewrote_code_1, types_1, tokenizer)
+        start_end = get_start_end_of_token_when_tokenized(rewrote_code_1.split(' '), types_1, tokenizer)
         
         for syntaxType in syntaxList:
             attention_weights = [[[] for col in range(12)] for row in range(12)]
@@ -315,7 +308,7 @@ if __name__ == "__main__":
 
     model=Model(model,config,tokenizer)
     checkpoint_prefix = "/Users/jirigesi/Documents/icse2023/attentionBias/Clone-detection-BigCloneBench/code/saved_models/checkpoint-best-f1/model.bin"
-    model.load_state_dict(torch.load(checkpoint_prefix))
+    model.load_state_dict(torch.load(checkpoint_prefix, map_location='cpu'))
     model = model.to(device)
     
     file_path = "../dataset/valid.txt"
@@ -347,24 +340,24 @@ if __name__ == "__main__":
             data.append((url1,url2,label,' '.join(url_to_code[url1].split()), ' '.join(url_to_code[url2].split())))
             added_lines += 1
 
-    syntax_list = ['method_declaration', 
+    syntax_list = ['else', 
                     'if_statement', 
-                    'else', 
+                    'method_declaration', 
                     'class_declaration', 
                     'constructor_declaration']
     
-    syntax_attention_weights = getSyntaxAttentionScore(model, data, tokenizer, syntax_list, model_type='finetuned')
-    
-    # pikle the syntax_attention_weights
-    with open('ast_attention_weights_finetuned.pkl', 'wb') as f:
-        pickle.dump(syntax_attention_weights, f)
-    # model = RobertaModel.from_pretrained('microsoft/codebert-base',
-    #                                     output_attentions=True, 
-    #                                     output_hidden_states=True)
-    # model=Model(model,config,tokenizer)
-    # model = model.to(device)
-    # syntax_attention_weights = getSyntaxAttentionScore(model, data, tokenizer, syntax_list, model_type='pretrained')
+    # syntax_attention_weights = getSyntaxAttentionScore(model, data, tokenizer, syntax_list, model_type='finetuned')
     
     # # pikle the syntax_attention_weights
-    # with open('ast_attention_weights_pretrained.pkl', 'wb') as f:
+    # with open('ast_attention_weights_finetuned3.pkl', 'wb') as f:
     #     pickle.dump(syntax_attention_weights, f)
+    model = RobertaModel.from_pretrained('microsoft/codebert-base',
+                                        output_attentions=True, 
+                                        output_hidden_states=True)
+    model=Model(model,config,tokenizer)
+    model = model.to(device)
+    syntax_attention_weights = getSyntaxAttentionScore(model, data, tokenizer, syntax_list, model_type='pretrained')
+    
+    # pikle the syntax_attention_weights
+    with open('ast_attention_weights_pretrained3.pkl', 'wb') as f:
+        pickle.dump(syntax_attention_weights, f)
